@@ -1,95 +1,66 @@
-import { test, expect } from "@playwright/test";
 
-const PRODUCT = {
-  name: "Samsung galaxy s6",
-  url: "/prod.html?idp_=1",
-  expectedPrice: "360"
-};
+import { test, expect } from "./fixtures/baseTest";
+import { PRODUCT } from "../data/productDtls";
+import { PurchaseDetails } from "../data/parchaseOrderDtls";
 
-test("AT-01 Homepage smoke & navigation", async ({ page }) => {
-  await page.goto("/index.html");
-  await expect(page.getByRole("link", { name: "Cart" })).toBeVisible();
-  await expect(page.getByRole("link", { name: "Log in" })).toBeVisible();
-  await expect(page.getByRole("link", { name: "Sign up" })).toBeVisible();
+import { clearCartState } from "../utils/clearCart";
+
+test.beforeEach(async ({ page }) => {
+  await clearCartState(page);
 });
 
-test("AT-02 Login and Logout functions work", async ({ page }) => {
-  await page.goto("/index.html");
+test.afterEach(async ({ evidence }, testInfo) => {
+  if (testInfo.status !== testInfo.expectedStatus) {
+    if (evidence.addToCartPayload !== undefined) {
+      await testInfo.attach("addtocart-payload.json", {
+        body: Buffer.from(JSON.stringify(evidence.addToCartPayload, null, 2)),
+        contentType: "application/json",
+      });
+    }
+  }
+});
 
-  await page.getByRole("link", { name: "Log in" }).click();
+test("AT-01 Homepage smoke & navigation", async ({ home}) => {
+  await home.goto();
+  await home.assertNavigationVisible();
+});
 
-  await page.locator("#loginusername").fill("a");
-  await page.locator("#loginpassword").fill("a");
-  await page.getByRole("button", { name: "Log in" }).click();
-
-  await expect(page.getByRole("link", { name: "Log out" })).toBeVisible();
-  await page.getByRole("link", { name: "Log out" }).click();
-  await expect(page.getByRole("link", { name: "Log in" })).toBeVisible();
+test("AT-02 PDP renders for known product", async ({ product }) => {
+ 
+  await product.goto(PRODUCT.url);
+  await product.assertProductRenders(PRODUCT.name);
 
 });
 
-test("AT-03 PDP renders for known product", async ({ page }) => {
-  await page.goto(PRODUCT.url);
-  await expect(page.getByRole("heading", { name: PRODUCT.name })).toBeVisible();
-  await expect(page.locator("h3.price-container")).toContainText("$");
-  await expect(page.getByRole("link", { name: "Add to cart" })).toBeVisible();
+test("AT-03 Add to cart  works and triggers confirmation alert", async ({ product }) => {
+
+  await product.goto(PRODUCT.url);
+  await product.addToCartExpectingAlert("product");
+
 });
 
-test("AT-04 Add to cart  happens and triggers confirmation alert", async ({ page }) => {
-  await page.goto(PRODUCT.url);
+test("AT-04 After adding cart shows the correct item  in the cart with correct amount" , async ({ product, cart  }) => {
+ 
+  await product.goto(PRODUCT.url);
+  await product.addToCartAcceptAlert(PRODUCT.name);
 
-  // page.once("dialog", async (dialog) => {
-  //   expect(dialog.message().toLowerCase()).toContain("product");
-  //   await dialog.accept();
-  // });
-
-  await page.getByRole("link", { name: "Add to cart" }).click();
-
-  page.once("dialog", async (dialog) => {
-    expect(dialog.message().toLowerCase()).toContain("product");
-    await dialog.accept();
-  });
-  //await page.getByRole("link", { name: "Add to cart" }).click();
-
-  await page.goto("/cart.html");
-  await expect(page.locator("#tbodyid")).toContainText(PRODUCT.name);
-  //await expect(page.locator("#totalp")).toHaveText(PRODUCT.expectedPrice);
+  await cart.goto();
+  await cart.assertItemPresent(PRODUCT.name);
+  await cart.assertTotal(PRODUCT.expectedPrice);
 
 
 });
 
-// test("AT-04 Cart shows item and total updates", async ({ page }) => {
-//   await page.goto(PRODUCT.url);
+test("AT-05 Place order completes and shows order confirmation", async ({ product, cart, checkout }) => {
+  
+  await product.goto(PRODUCT.url);
+  await product.addToCartAcceptAlert(PRODUCT.name);
 
-//   page.once("dialog", async (dialog) => await dialog.accept());
-//   await page.getByRole("link", { name: "Add to cart" }).click();
+  await cart.goto();
+  await cart.clickPlaceOrder();
 
-//   await page.goto("/cart.html");
-//   await expect(page.locator("#tbodyid")).toContainText(PRODUCT.name);
-//   await expect(page.locator("#totalp")).toHaveText(PRODUCT.expectedPrice);
-// });
+  await checkout.fill(PurchaseDetails);
+  await checkout.purchase();
+  await checkout.assertConfirmationContains(PurchaseDetails.name);
 
-test("AT-05 Place order completes and shows order confirmation", async ({ page }) => {
-  await page.goto(PRODUCT.url);
-
-  page.once("dialog", async (dialog) => await dialog.accept());
-  await page.getByRole("link", { name: "Add to cart" }).click();
-
-  await page.goto("/cart.html");
-  await page.getByRole("button", { name: "Place Order" }).click();
-
-  const name = "Test User";
-  await page.locator("#name").fill(name);
-  await page.locator("#country").fill("UK");
-  await page.locator("#city").fill("London");
-  await page.locator("#card").fill("4111111111111111");
-  await page.locator("#month").fill("01");
-  await page.locator("#year").fill("2030");
-
-  await page.getByRole("button", { name: "Purchase" }).click();
-
-  // SweetAlert confirmation
-  await expect(page.locator(".sweet-alert")).toBeVisible();
-  await expect(page.locator(".sweet-alert")).toContainText(name);
-  await expect(page.locator(".sweet-alert")).toContainText("Amount:");
 });
